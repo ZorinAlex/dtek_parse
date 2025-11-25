@@ -13,6 +13,7 @@ export interface RawSchedulePayload {
 export interface NormalizedOutage {
   className: string;
   timeSlot: string;
+  date?: string; // Date from <div class="date"> span[rel="date"] (e.g., "26.11.25")
 }
 
 export interface PersistedSchedules {
@@ -29,6 +30,7 @@ export interface PersistedSchedules {
 export interface MergedOutagePeriod {
   startTime: string; // Format: "HH:MM"
   endTime: string; // Format: "HH:MM"
+  date?: string; // Date from schedule (e.g., "26.11.25")
 }
 
 export interface ProcessedSchedule {

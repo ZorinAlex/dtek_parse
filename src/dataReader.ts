@@ -82,13 +82,13 @@ export class DataReader {
   /**
    * Merges consecutive outage periods into continuous ranges
    */
-  private mergePeriods(outages: Array<{ className: string; timeSlot: string }>): MergedOutagePeriod[] {
+  private mergePeriods(outages: Array<{ className: string; timeSlot: string; date?: string }>): MergedOutagePeriod[] {
     if (outages.length === 0) {
       return [];
     }
 
-    // Parse all outages into time ranges
-    const periods: Array<{ start: string; end: string; startMinutes: number; endMinutes: number }> = [];
+    // Parse all outages into time ranges, grouped by date
+    const periodsByDate = new Map<string, Array<{ start: string; end: string; startMinutes: number; endMinutes: number }>>();
 
     for (const outage of outages) {
       const timeRange = this.parseTimeSlot(outage.timeSlot, outage.className);
@@ -113,7 +113,12 @@ export class DataReader {
         continue;
       }
 
-      periods.push({
+      const dateKey = outage.date || "unknown";
+      if (!periodsByDate.has(dateKey)) {
+        periodsByDate.set(dateKey, []);
+      }
+      
+      periodsByDate.get(dateKey)!.push({
         start: timeRange.start,
         end: timeRange.end,
         startMinutes: startHour * 60 + startMin,
@@ -121,57 +126,65 @@ export class DataReader {
       });
     }
 
-    if (periods.length === 0) {
-      return [];
-    }
-
-    // Sort by start time
-    periods.sort((a, b) => a.startMinutes - b.startMinutes);
-
-    // Merge consecutive periods
-    const merged: MergedOutagePeriod[] = [];
+    // Merge periods for each date separately
+    const allMerged: MergedOutagePeriod[] = [];
     
-    if (periods.length === 0) {
-      return merged;
-    }
-
-    let currentPeriod = periods[0];
-    if (!currentPeriod) {
-      return merged;
-    }
-
-    for (let i = 1; i < periods.length; i++) {
-      const nextPeriod = periods[i];
-      if (!nextPeriod) {
+    for (const [date, periods] of periodsByDate.entries()) {
+      if (periods.length === 0) {
         continue;
       }
 
-      // Check if periods are consecutive (current end equals next start)
-      if (currentPeriod.endMinutes === nextPeriod.startMinutes) {
-        // Merge: extend current period to next period's end
-        currentPeriod = {
-          start: currentPeriod.start,
-          end: nextPeriod.end,
-          startMinutes: currentPeriod.startMinutes,
-          endMinutes: nextPeriod.endMinutes,
-        };
-      } else {
-        // Not consecutive, save current and start new
-        merged.push({
-          startTime: currentPeriod.start,
-          endTime: currentPeriod.end,
-        });
-        currentPeriod = nextPeriod;
+      // Sort by start time
+      periods.sort((a, b) => a.startMinutes - b.startMinutes);
+
+      // Merge consecutive periods
+      let currentPeriod = periods[0];
+      if (!currentPeriod) {
+        continue;
       }
+
+      for (let i = 1; i < periods.length; i++) {
+        const nextPeriod = periods[i];
+        if (!nextPeriod) {
+          continue;
+        }
+
+        // Check if periods are consecutive (current end equals next start)
+        if (currentPeriod.endMinutes === nextPeriod.startMinutes) {
+          // Merge: extend current period to next period's end
+          currentPeriod = {
+            start: currentPeriod.start,
+            end: nextPeriod.end,
+            startMinutes: currentPeriod.startMinutes,
+            endMinutes: nextPeriod.endMinutes,
+          };
+        } else {
+          // Not consecutive, save current and start new
+          const mergedPeriod: MergedOutagePeriod = {
+            startTime: currentPeriod.start,
+            endTime: currentPeriod.end,
+          };
+          if (date !== "unknown") {
+            mergedPeriod.date = date;
+          }
+          allMerged.push(mergedPeriod);
+          currentPeriod = nextPeriod;
+        }
+      }
+
+      // Add the last period
+      const mergedPeriod: MergedOutagePeriod = {
+        startTime: currentPeriod.start,
+        endTime: currentPeriod.end,
+      };
+      if (date !== "unknown") {
+        mergedPeriod.date = date;
+      }
+      allMerged.push(mergedPeriod);
     }
 
-    // Add the last period
-    merged.push({
-      startTime: currentPeriod.start,
-      endTime: currentPeriod.end,
-    });
+    return allMerged;
 
-    return merged;
   }
 
   getProcessedSchedule(): ProcessedSchedule | null {

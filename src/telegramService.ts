@@ -38,17 +38,34 @@ export class TelegramService {
 
     // Update date
     if (schedule.updateDate) {
-      lines.push(`📅 <b>Оновлено:</b> ${schedule.updateDate}\n`);
+      lines.push(`📅 <b>Оновлено:</b> ${schedule.updateDate}`);
     }
-
     // Periods
     if (schedule.periods.length === 0) {
       lines.push("\n✅ <b>Відключень не заплановано</b>");
     } else {
-      lines.push(`\n⏰ <b>Періоди відключення (${schedule.periods.length}):</b>\n`);
+      // Group periods by date
+      const periodsByDate = new Map<string, typeof schedule.periods>();
+      
+      schedule.periods.forEach((period) => {
+        const dateKey = period.date || "Не вказано";
+        if (!periodsByDate.has(dateKey)) {
+          periodsByDate.set(dateKey, []);
+        }
+        periodsByDate.get(dateKey)!.push(period);
+      });
 
-      schedule.periods.forEach((period, index) => {
-        lines.push(`${index + 1}. ${period.startTime} - ${period.endTime}`);
+      lines.push(`\n⏰ <b>Періоди відключення:</b>`);
+
+      // Sort dates
+      const sortedDates = Array.from(periodsByDate.keys()).sort();
+      
+      sortedDates.forEach((date) => {
+        const periods = periodsByDate.get(date)!;
+        lines.push(`\n📆 <b>${date}:</b>`);
+        periods.forEach((period) => {
+          lines.push(`🕯️ ${period.startTime} - ${period.endTime}`);
+        });
       });
     }
 

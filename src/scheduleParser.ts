@@ -88,8 +88,18 @@ export class ScheduleParser {
       const table = $factTable.find("table").first();
       const relTimestamp = $factTable.attr("rel");
       
+      // Extract date from .date[rel="..."] span[rel="date"]
+      let tableDate: string | undefined;
+      if (relTimestamp) {
+        const dateElement = disconFact.find(`.date[rel="${relTimestamp}"] span[rel="date"]`);
+        if (dateElement.length > 0) {
+          tableDate = dateElement.text().trim();
+          logger.debug(`Found date for table ${relTimestamp}: ${tableDate}`);
+        }
+      }
+      
       if (table.length > 0) {
-        outages.push(...this.parseFactTable($, table, address, relTimestamp));
+        outages.push(...this.parseFactTable($, table, address, relTimestamp, tableDate));
       }
     });
     
@@ -144,7 +154,8 @@ export class ScheduleParser {
     $: cheerio.CheerioAPI,
     table: cheerio.Cheerio<any>,
     address: AddressQuery,
-    relTimestamp?: string
+    relTimestamp?: string,
+    tableDate?: string
   ): NormalizedOutage[] {
     const outages: NormalizedOutage[] = [];
 
@@ -245,10 +256,16 @@ export class ScheduleParser {
         }
         
         // Create outage record
-        outages.push({
+        const outage: NormalizedOutage = {
           className: className,
           timeSlot: timeSlot,
-        });
+        };
+        
+        if (tableDate) {
+          outage.date = tableDate;
+        }
+        
+        outages.push(outage);
       });
     });
 

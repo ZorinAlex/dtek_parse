@@ -1,9 +1,9 @@
 {
-  "lastFetchedAt": "2025-11-25T22:27:07.124Z",
   "address": {
     "city": "Ржищів",
     "street": "Петренка",
-    "building": "1"
+    "building": "1",
+    "queue": "Черга 3.2"
   },
   "outages": [
     {

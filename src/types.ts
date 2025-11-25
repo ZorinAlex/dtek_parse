@@ -17,11 +17,11 @@ export interface NormalizedOutage {
 
 export interface PersistedSchedules {
   updateDate?: string; // Date from <span class="update">
-  queue?: string; // Queue from <div id="group-name">
   address: {
     city: string;
     street: string;
     building: string;
+    queue?: string; // Queue from <div id="group-name">
   };
   outages: NormalizedOutage[];
 }

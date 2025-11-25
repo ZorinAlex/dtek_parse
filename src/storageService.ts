@@ -18,10 +18,6 @@ export class StorageService {
       cleanData.updateDate = data.updateDate;
     }
     
-    if (data.queue) {
-      cleanData.queue = data.queue;
-    }
-    
     await fs.writeJSON(this.storagePath, cleanData, { spaces: 2 });
     logger.info(`Saved ${data.outages.length} outages to ${this.storagePath}`);
   }

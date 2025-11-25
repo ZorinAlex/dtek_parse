@@ -370,7 +370,7 @@ export class DtekClient {
           const style = window.getComputedStyle(list);
           return style.display !== "none" && style.visibility !== "hidden" && items.length > 0;
         },
-        { timeout: 5000 },
+        { timeout: 1000 },
         listId
       );
       

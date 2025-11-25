@@ -31,7 +31,7 @@ async function fetchParseSave(): Promise<void> {
     }
     
     if (parsed.queue) {
-      dataToSave.queue = parsed.queue;
+      dataToSave.address.queue = parsed.queue;
     }
     
     await storage.save(dataToSave);

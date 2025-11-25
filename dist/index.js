@@ -29,7 +29,7 @@ async function fetchParseSave() {
             dataToSave.updateDate = parsed.updateDate;
         }
         if (parsed.queue) {
-            dataToSave.queue = parsed.queue;
+            dataToSave.address.queue = parsed.queue;
         }
         await storage.save(dataToSave);
         logger_1.logger.info(`Cycle complete: ${parsed.outages.length} outages stored`);

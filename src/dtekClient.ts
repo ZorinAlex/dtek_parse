@@ -123,7 +123,7 @@ export class DtekClient {
         await this.fillAutocompleteInput(page, CITY_SELECTOR, address.city);
         // Wait for city selection to process and enable street field
         logger.debug("Waiting for street field to become enabled after city selection...");
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       } else {
         throw new Error("ADDRESS_CITY is required for the search form");
       }
@@ -147,7 +147,7 @@ export class DtekClient {
               el.readOnly = false;
             }
           }, STREET_SELECTOR);
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
         
         logger.debug("Filling street field...");
@@ -257,49 +257,38 @@ export class DtekClient {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     
-    // Type the value character by character to trigger autocomplete
-    for (const char of value) {
-      await page.type(selector, char, { delay: 10 });
-      // Trigger events after each character
-      await page.evaluate((sel) => {
-        const input = document.querySelector(sel) as HTMLInputElement | null;
-        if (input) {
-          input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: input.value.slice(-1) }));
-          input.dispatchEvent(new KeyboardEvent("keypress", { bubbles: true, key: input.value.slice(-1) }));
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: input.value.slice(-1) }));
-        }
-      }, selector);
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    
-    // Final trigger events and try jQuery if available
-    await page.evaluate((sel) => {
+    // Set value directly and trigger events for faster input
+    await page.evaluate((sel, val) => {
       const input = document.querySelector(sel) as HTMLInputElement | null;
-      if (!input) return;
-
-      // Try jQuery trigger if available
-      const $ = (window as any).jQuery || (window as any).$;
-      if ($) {
-        try {
-          $(input).trigger("input");
-          $(input).trigger("keyup");
-          $(input).trigger("change");
-          $(input).focus();
-        } catch (e) {
-          console.log("jQuery trigger failed:", e);
+      if (input) {
+        input.value = val;
+        // Trigger all necessary events for autocomplete
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("keyup", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        
+        // Try jQuery trigger if available
+        const $ = (window as any).jQuery || (window as any).$;
+        if ($) {
+          try {
+            $(input).trigger("input");
+            $(input).trigger("keyup");
+            $(input).trigger("change");
+          } catch (e) {
+            // Ignore jQuery errors
+          }
         }
       }
-
-      // Native events
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("keyup", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-      input.focus();
-    }, selector);
+    }, selector, value);
     
-    // Wait a bit for autocomplete to trigger
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Small delay for autocomplete to process
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    
+    // Additional focus to ensure field is active
+    await page.focus(selector);
+    
+    // Wait for autocomplete to trigger (reduced timeout)
+    await new Promise((resolve) => setTimeout(resolve, 500));
     
     // Debug: log current input value
     const currentValue = await page.evaluate((sel) => {
@@ -319,15 +308,15 @@ export class DtekClient {
         `Fallback to keyboard selection for selector ${selector} and value ${value}`
       );
       // Wait a bit more
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 300));
       // Try keyboard navigation
       await page.keyboard.press("ArrowDown");
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       await page.keyboard.press("Enter");
     }
 
-    // Wait for field to update
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait for field to update (reduced timeout)
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   private getAutocompleteListId(selector: string): string {

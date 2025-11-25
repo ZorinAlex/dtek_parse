@@ -4,6 +4,7 @@ import { DtekClient } from "./dtekClient";
 import { ScheduleParser } from "./scheduleParser";
 import { StorageService } from "./storageService";
 import { logger } from "./logger";
+import { PersistedSchedules } from "./types";
 
 const client = new DtekClient();
 const parser = new ScheduleParser();
@@ -16,11 +17,24 @@ async function fetchParseSave(): Promise<void> {
     const rawPayload = await client.fetchRawSchedule(config.address);
     const parsed = parser.parse(rawPayload, config.address);
 
-    await storage.save({
-      lastFetchedAt: new Date().toISOString(),
+    const dataToSave: PersistedSchedules = {
+      address: {
+        city: config.address.city,
+        street: config.address.street || "",
+        building: config.address.building || "",
+      },
       outages: parsed.outages,
-      raw: parsed.raw,
-    });
+    };
+    
+    if (parsed.updateDate) {
+      dataToSave.updateDate = parsed.updateDate;
+    }
+    
+    if (parsed.queue) {
+      dataToSave.queue = parsed.queue;
+    }
+    
+    await storage.save(dataToSave);
 
     logger.info(`Cycle complete: ${parsed.outages.length} outages stored`);
   } catch (error) {

@@ -8,7 +8,21 @@ export class StorageService {
 
   async save(data: PersistedSchedules): Promise<void> {
     await fs.ensureDir(path.dirname(this.storagePath));
-    await fs.writeJSON(this.storagePath, data, { spaces: 2 });
+    // Clear existing data and write fresh
+    const cleanData: PersistedSchedules = {
+      address: data.address,
+      outages: data.outages,
+    };
+    
+    if (data.updateDate) {
+      cleanData.updateDate = data.updateDate;
+    }
+    
+    if (data.queue) {
+      cleanData.queue = data.queue;
+    }
+    
+    await fs.writeJSON(this.storagePath, cleanData, { spaces: 2 });
     logger.info(`Saved ${data.outages.length} outages to ${this.storagePath}`);
   }
 

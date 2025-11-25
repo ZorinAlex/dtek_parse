@@ -17,11 +17,21 @@ async function fetchParseSave() {
     try {
         const rawPayload = await client.fetchRawSchedule(config_1.config.address);
         const parsed = parser.parse(rawPayload, config_1.config.address);
-        await storage.save({
-            lastFetchedAt: new Date().toISOString(),
+        const dataToSave = {
+            address: {
+                city: config_1.config.address.city,
+                street: config_1.config.address.street || "",
+                building: config_1.config.address.building || "",
+            },
             outages: parsed.outages,
-            raw: parsed.raw,
-        });
+        };
+        if (parsed.updateDate) {
+            dataToSave.updateDate = parsed.updateDate;
+        }
+        if (parsed.queue) {
+            dataToSave.queue = parsed.queue;
+        }
+        await storage.save(dataToSave);
         logger_1.logger.info(`Cycle complete: ${parsed.outages.length} outages stored`);
     }
     catch (error) {

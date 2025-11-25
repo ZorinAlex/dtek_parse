@@ -1,0 +1,47 @@
+{
+  "lastFetchedAt": "2025-11-25T22:27:07.124Z",
+  "address": {
+    "city": "Ржищів",
+    "street": "Петренка",
+    "building": "1"
+  },
+  "outages": [
+    {
+      "className": "cell-second-half",
+      "timeSlot": "05-06"
+    },
+    {
+      "className": "cell-scheduled",
+      "timeSlot": "06-07"
+    },
+    {
+      "className": "cell-scheduled",
+      "timeSlot": "07-08"
+    },
+    {
+      "className": "cell-scheduled",
+      "timeSlot": "08-09"
+    },
+    {
+      "className": "cell-first-half",
+      "timeSlot": "09-10"
+    },
+    {
+      "className": "cell-scheduled",
+      "timeSlot": "16-17"
+    },
+    {
+      "className": "cell-scheduled",
+      "timeSlot": "17-18"
+    },
+    {
+      "className": "cell-scheduled",
+      "timeSlot": "18-19"
+    },
+    {
+      "className": "cell-scheduled",
+      "timeSlot": "19-20"
+    }
+  ],
+  "updateDate": "25.11.2025 19:45"
+}

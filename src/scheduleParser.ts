@@ -6,6 +6,8 @@ import { config } from "./config";
 
 interface ParseResult {
   outages: NormalizedOutage[];
+  updateDate?: string;
+  queue?: string;
   raw: RawSchedulePayload;
 }
 
@@ -32,7 +34,15 @@ export class ScheduleParser {
       }
     }
 
-    return {
+    // Extract update date and queue from HTML if available
+    let updateDate: string | undefined;
+    let queue: string | undefined;
+    if (typeof payload === "string") {
+      updateDate = this.extractUpdateDate(payload);
+      queue = this.extractQueue(payload);
+    }
+
+    const result: ParseResult = {
       outages,
       raw: {
         source: config.baseUrl,
@@ -40,172 +50,206 @@ export class ScheduleParser {
         body: stringBody,
       },
     };
+    
+    if (updateDate) {
+      result.updateDate = updateDate;
+    }
+    
+    if (queue) {
+      result.queue = queue;
+    }
+    
+    return result;
   }
 
   private fromHtml(html: string, address: AddressQuery): NormalizedOutage[] {
     const $ = cheerio.load(html);
     const outages: NormalizedOutage[] = [];
 
-    // Try to find the schedule table
-    const scheduleTable = $("#tableRenderElem table, .discon-schedule-table table");
-    
-    if (scheduleTable.length === 0) {
-      logger.debug("No schedule table found, trying generic table parsing");
-      return this.parseGenericTable(html, address);
+    // Only parse tables from #discon-fact element
+    const disconFact = $("#discon-fact");
+    if (disconFact.length === 0) {
+      logger.debug("No #discon-fact element found");
+      return outages;
     }
 
-    // Get column headers (time slots)
+    // Get all fact tables
+    const factTables = disconFact.find(".discon-fact-table");
+    
+    if (factTables.length === 0) {
+      logger.debug("No .discon-fact-table found in #discon-fact");
+      return outages;
+    }
+
+    logger.debug(`Found ${factTables.length} fact table(s) in #discon-fact`);
+    
+    factTables.each((_, factTable) => {
+      const $factTable = $(factTable);
+      const table = $factTable.find("table").first();
+      const relTimestamp = $factTable.attr("rel");
+      
+      if (table.length > 0) {
+        outages.push(...this.parseFactTable($, table, address, relTimestamp));
+      }
+    });
+    
+    return outages;
+  }
+
+  private extractUpdateDate(html: string): string | undefined {
+    const $ = cheerio.load(html);
+    // Look for update date only in #discon-fact
+    const disconFact = $("#discon-fact");
+    if (disconFact.length === 0) {
+      logger.debug("No #discon-fact element found for update date extraction");
+      return undefined;
+    }
+    
+    // Try multiple selectors to find the update date
+    let updateSpan = disconFact.find("span.update");
+    if (updateSpan.length === 0) {
+      updateSpan = disconFact.find(".discon-fact-info-text span.update");
+    }
+    if (updateSpan.length === 0) {
+      updateSpan = disconFact.find(".discon-fact-info .update");
+    }
+    
+    if (updateSpan.length > 0) {
+      const dateText = updateSpan.text().trim();
+      logger.debug(`Found update date: ${dateText}`);
+      return dateText;
+    }
+    
+    logger.debug("Update date span not found in #discon-fact");
+    return undefined;
+  }
+
+  private extractQueue(html: string): string | undefined {
+    const $ = cheerio.load(html);
+    // Look for queue in #group-name
+    const groupName = $("#group-name");
+    if (groupName.length > 0) {
+      const queueText = groupName.text().trim();
+      if (queueText) {
+        logger.debug(`Found queue: ${queueText}`);
+        return queueText;
+      }
+    }
+    
+    logger.debug("Queue (#group-name) not found");
+    return undefined;
+  }
+
+  private parseFactTable(
+    $: cheerio.CheerioAPI,
+    table: cheerio.Cheerio<any>,
+    address: AddressQuery,
+    relTimestamp?: string
+  ): NormalizedOutage[] {
+    const outages: NormalizedOutage[] = [];
+
+    // Get column headers (time slots) from thead
     const headers: string[] = [];
-    scheduleTable.find("thead th").each((_, th) => {
-      const text = $(th).text().trim();
-      if (text && !text.includes("Часові") && !text.includes("проміжки")) {
-        headers.push(text);
+    table.find("thead th").each((_, th) => {
+      // Try to get from div inside th first, then from th text
+      const divText = $(th).find("div").text().trim();
+      const thText = $(th).text().trim();
+      const text = divText || thText;
+      
+      // Extract time slot pattern like "00-01"
+      const timeMatch = text.match(/(\d{2}-\d{2})/);
+      if (timeMatch && timeMatch[1]) {
+        headers.push(timeMatch[1]);
       }
     });
 
-    // Get current date for building timestamps
-    const today = new Date();
-    const dayNames = ["Неділя", "Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота"];
+    // Parse date from rel timestamp if available
+    let targetDate: Date;
+    if (relTimestamp) {
+      const timestamp = parseInt(relTimestamp, 10);
+      if (!isNaN(timestamp)) {
+        targetDate = new Date(timestamp * 1000); // Convert from seconds to milliseconds
+      } else {
+        targetDate = new Date();
+      }
+    } else {
+      targetDate = new Date();
+    }
 
-    // Parse each row (day of week)
-    scheduleTable.find("tbody tr").each((rowIdx, row) => {
-      const dayName = $(row).find("td:first-child, td:nth-child(2)").text().trim();
-      const dayIndex = dayNames.findIndex((d) => dayName.includes(d));
+    // Parse each row in tbody
+    table.find("tbody tr").each((rowIdx, row) => {
+      const $row = $(row);
+      const tds = $row.find("td");
       
-      if (dayIndex === -1) {
-        return;
+      // First td(s) are merged (colspan="2") and empty, skip them
+      // Remaining tds are time slot cells
+      // Count how many tds to skip (usually 1 with colspan="2" or 2 separate tds)
+      let skipCount = 0;
+      const firstTd = tds.first();
+      const colspan = parseInt(firstTd.attr("colspan") || "1", 10);
+      if (colspan > 1) {
+        skipCount = 1; // Skip one td with colspan
+      } else {
+        skipCount = 2; // Skip first two tds
       }
+      
+      tds.slice(skipCount).each((colIdx, cell) => {
+        const $cell = $(cell);
+        const cellClasses = $cell.attr("class") || "";
+        
+        // Skip if cell has class "cell-non-scheduled"
+        if (cellClasses.includes("cell-non-scheduled")) {
+          return;
+        }
 
-      // Calculate date for this day
-      const currentDayOfWeek = today.getDay();
-      let daysOffset = dayIndex - currentDayOfWeek;
-      if (daysOffset < 0) {
-        daysOffset += 7; // Next week
-      }
-      const targetDate = new Date(today);
-      targetDate.setDate(today.getDate() + daysOffset);
+        // Get time slot from header
+        const timeSlot = headers[colIdx] || "";
+        if (!timeSlot) {
+          return;
+        }
+        
+        // Extract class name (find class that starts with "cell-")
+        const className = cellClasses.split(" ").find((cls) => cls.startsWith("cell-")) || cellClasses || "";
+        
+        // Parse time range (e.g., "00-01" -> 00:00-01:00)
+        const parts = timeSlot.split("-").map((h) => parseInt(h.trim(), 10));
+        const startHour = parts[0];
+        const endHour = parts[1];
+        
+        if (startHour === undefined || endHour === undefined || isNaN(startHour) || isNaN(endHour)) {
+          return;
+        }
 
-      // Parse time slot cells
-      $(row)
-        .find("td")
-        .slice(2) // Skip day name columns
-        .each((colIdx, cell) => {
-          const $cell = $(cell);
-          const hasOutage =
-            $cell.hasClass("cell-scheduled") ||
-            $cell.hasClass("cell-scheduled-maybe") ||
-            $cell.hasClass("cell-first-half") ||
-            $cell.hasClass("cell-second-half");
+        // Determine start and end times based on cell class
+        let startTime: Date;
+        let endTime: Date;
 
-          if (!hasOutage) {
-            return;
-          }
-
-          // Get time slot from header
-          const timeSlot = headers[colIdx] || "";
-          if (!timeSlot) {
-            return;
-          }
-
-          // Parse time range (e.g., "00-01" -> 00:00-01:00)
-          const parts = timeSlot.split("-").map((h) => parseInt(h.trim(), 10));
-          const startHourRaw = parts[0];
-          const endHourRaw = parts[1];
-          
-          if (startHourRaw === undefined || endHourRaw === undefined || isNaN(startHourRaw) || isNaN(endHourRaw)) {
-            return;
-          }
-
-          const startHour = startHourRaw;
-          const endHour = endHourRaw;
-
-          // Determine if it's first or second half
-          const isFirstHalf = $cell.hasClass("cell-first-half");
-          const isSecondHalf = $cell.hasClass("cell-second-half");
-
-          let startMinutes = 0;
-          let endMinutes = 0;
-
-          if (isFirstHalf) {
-            startMinutes = 0;
-            endMinutes = 30;
-            const endHourAdjusted = startHour; // Same hour, 30 minutes later
-            const startTime = new Date(targetDate);
-            startTime.setHours(startHour, 0, 0, 0);
-            const endTime = new Date(targetDate);
-            endTime.setHours(endHourAdjusted, 30, 0, 0);
-
-            outages.push({
-              id: this.createId(
-                [address.city, address.street || "", address.building || "", dayName, timeSlot, "first"].join("|")
-              ),
-              city: address.city,
-              street: address.street || "",
-              building: address.building || "",
-              startTime: startTime.toISOString(),
-              endTime: endTime.toISOString(),
-              sourceUrl: config.baseUrl,
-              meta: {
-                day: dayName,
-                timeSlot,
-                type: "first-half",
-              },
-            });
-            return;
-          } else if (isSecondHalf) {
-            startMinutes = 30;
-            // If second half, end hour is next hour
-            const endHourAdjusted = endHour === startHour ? startHour + 1 : endHour;
-            const startTime = new Date(targetDate);
-            startTime.setHours(startHour, 30, 0, 0);
-            const endTime = new Date(targetDate);
-            endTime.setHours(endHourAdjusted, 0, 0, 0);
-
-            outages.push({
-              id: this.createId(
-                [address.city, address.street || "", address.building || "", dayName, timeSlot, "second"].join("|")
-              ),
-              city: address.city,
-              street: address.street || "",
-              building: address.building || "",
-              startTime: startTime.toISOString(),
-              endTime: endTime.toISOString(),
-              sourceUrl: config.baseUrl,
-              meta: {
-                day: dayName,
-                timeSlot,
-                type: "second-half",
-              },
-            });
-            return;
-          } else {
-            // Full hour outage
-            startMinutes = 0;
-            endMinutes = 0;
-          }
-
-          const startTime = new Date(targetDate);
-          startTime.setHours(startHour, startMinutes, 0, 0);
-          const endTime = new Date(targetDate);
-          endTime.setHours(endHour, endMinutes, 0, 0);
-
-          outages.push({
-            id: this.createId(
-              [address.city, address.street || "", address.building || "", dayName, timeSlot, isFirstHalf ? "first" : "full"].join("|")
-            ),
-            city: address.city,
-            street: address.street || "",
-            building: address.building || "",
-            startTime: startTime.toISOString(),
-            endTime: endTime.toISOString(),
-            sourceUrl: config.baseUrl,
-            meta: {
-              day: dayName,
-              timeSlot,
-              type: isFirstHalf ? "first-half" : "full-hour",
-            },
-          });
+        if (className === "cell-first-half") {
+          // First 30 minutes
+          startTime = new Date(targetDate);
+          startTime.setHours(startHour, 0, 0, 0);
+          endTime = new Date(targetDate);
+          endTime.setHours(startHour, 30, 0, 0);
+        } else if (className === "cell-second-half") {
+          // Second 30 minutes
+          startTime = new Date(targetDate);
+          startTime.setHours(startHour, 30, 0, 0);
+          endTime = new Date(targetDate);
+          endTime.setHours(endHour, 0, 0, 0);
+        } else {
+          // Full hour (cell-scheduled, cell-scheduled-maybe, etc.)
+          startTime = new Date(targetDate);
+          startTime.setHours(startHour, 0, 0, 0);
+          endTime = new Date(targetDate);
+          endTime.setHours(endHour, 0, 0, 0);
+        }
+        
+        // Create outage record
+        outages.push({
+          className: className,
+          timeSlot: timeSlot,
         });
+      });
     });
 
     return outages;
@@ -236,20 +280,12 @@ export class ScheduleParser {
         : (address.street ?? "");
       const buildingValue = maybeBuilding || address.building || "";
 
-      const outage: NormalizedOutage = {
-        id: this.createId(cells.join("|")),
-        city: cityCell || address.city,
-        street: streetValue,
-        building: buildingValue,
-        startTime,
-        endTime,
-        sourceUrl: config.baseUrl,
-        meta: {
-          row: cells,
-        },
-      };
-
-      outages.push(outage);
+      // This is a fallback method - return empty array since we only parse from #discon-fact
+      // If needed, could extract className and timeSlot from cells, but not used currently
+      // outages.push({
+      //   className: "",
+      //   timeSlot: "",
+      // });
     });
 
     return outages;
@@ -278,20 +314,12 @@ export class ScheduleParser {
       const endRaw =
         this.pick(record, ["end", "endTime", "to"]) ?? "Unknown";
 
-      const outage: NormalizedOutage = {
-        id: this.createId(
-          [city, street, building, startRaw, endRaw].join("|")
-        ),
-        city,
-        street,
-        building,
-        startTime: this.normalizeDate(startRaw),
-        endTime: this.normalizeDate(endRaw),
-        sourceUrl: config.baseUrl,
-        meta: record,
-      };
-
-      outages.push(outage);
+      // This is a fallback method - return empty array since we only parse from #discon-fact
+      // If needed, could extract className and timeSlot from record, but not used currently
+      // outages.push({
+      //   className: "",
+      //   timeSlot: "",
+      // });
     });
 
     return outages;

@@ -11,19 +11,18 @@ export interface RawSchedulePayload {
 }
 
 export interface NormalizedOutage {
-  id: string;
-  city: string;
-  street: string;
-  building: string;
-  startTime: string;
-  endTime: string;
-  sourceUrl: string;
-  meta?: Record<string, unknown>;
+  className: string;
+  timeSlot: string;
 }
 
 export interface PersistedSchedules {
-  lastFetchedAt: string;
+  updateDate?: string; // Date from <span class="update">
+  queue?: string; // Queue from <div id="group-name">
+  address: {
+    city: string;
+    street: string;
+    building: string;
+  };
   outages: NormalizedOutage[];
-  raw: RawSchedulePayload;
 }
 

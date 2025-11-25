@@ -186,7 +186,7 @@ export class DtekClient {
   }
 
   private async ensureInputReady(page: Page, selector: string): Promise<void> {
-    await page.waitForSelector(selector, { visible: true, timeout: 10000 });
+    await page.waitForSelector(selector, { visible: true, timeout: 1000 });
   }
 
   private async waitForFieldEnabled(page: Page, selector: string): Promise<void> {
@@ -259,7 +259,7 @@ export class DtekClient {
     
     // Type the value character by character to trigger autocomplete
     for (const char of value) {
-      await page.type(selector, char, { delay: 100 });
+      await page.type(selector, char, { delay: 10 });
       // Trigger events after each character
       await page.evaluate((sel) => {
         const input = document.querySelector(sel) as HTMLInputElement | null;
@@ -270,7 +270,7 @@ export class DtekClient {
           input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: input.value.slice(-1) }));
         }
       }, selector);
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
     
     // Final trigger events and try jQuery if available
@@ -299,7 +299,7 @@ export class DtekClient {
     }, selector);
     
     // Wait a bit for autocomplete to trigger
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     
     // Debug: log current input value
     const currentValue = await page.evaluate((sel) => {
@@ -394,7 +394,7 @@ export class DtekClient {
       const firstItemSelector = `${listId} > div:first-child`;
       
       await page.waitForSelector(firstItemSelector, {
-        timeout: 3000,
+        timeout: 1000,
         visible: true
       });
       
@@ -454,7 +454,7 @@ export class DtekClient {
     
     try {
       // Wait for table to be present
-      await page.waitForSelector(TABLE_SELECTOR, { timeout: 10000 });
+      await page.waitForSelector(TABLE_SELECTOR, { timeout: 1000 });
       
       // Wait a bit for any dynamic content to load
       await new Promise((resolve) => setTimeout(resolve, 1000));

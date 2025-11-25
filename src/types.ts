@@ -26,3 +26,19 @@ export interface PersistedSchedules {
   outages: NormalizedOutage[];
 }
 
+export interface MergedOutagePeriod {
+  startTime: string; // Format: "HH:MM"
+  endTime: string; // Format: "HH:MM"
+}
+
+export interface ProcessedSchedule {
+  updateDate?: string;
+  address: {
+    city: string;
+    street: string;
+    building: string;
+    queue?: string;
+  };
+  periods: MergedOutagePeriod[];
+}
+

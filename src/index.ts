@@ -3,12 +3,28 @@ import { config } from "./config";
 import { DtekClient } from "./dtekClient";
 import { ScheduleParser } from "./scheduleParser";
 import { StorageService } from "./storageService";
+import { DataReader } from "./dataReader";
+import { TelegramService } from "./telegramService";
 import { logger } from "./logger";
 import { PersistedSchedules } from "./types";
 
 const client = new DtekClient();
 const parser = new ScheduleParser();
 const storage = new StorageService(config.storagePath);
+const dataReader = new DataReader(config.storagePath);
+
+let telegramService: TelegramService | null = null;
+if (config.telegram) {
+  try {
+    telegramService = new TelegramService(
+      config.telegram.botToken,
+      config.telegram.chatId
+    );
+    logger.info("Telegram service enabled");
+  } catch (error) {
+    logger.warn(`Failed to initialize Telegram service: ${(error as Error).message}`);
+  }
+}
 
 async function fetchParseSave(): Promise<void> {
   logger.info("Starting fetch → parse → save cycle");
@@ -37,6 +53,22 @@ async function fetchParseSave(): Promise<void> {
     await storage.save(dataToSave);
 
     logger.info(`Cycle complete: ${parsed.outages.length} outages stored`);
+
+    // Send to Telegram if configured
+    if (telegramService) {
+      try {
+        await dataReader.load();
+        const processed = dataReader.getProcessedSchedule();
+        if (processed) {
+          await telegramService.sendSchedule(processed);
+        }
+      } catch (error) {
+        logger.error(
+          `Failed to send schedule to Telegram: ${(error as Error).message}`,
+          error
+        );
+      }
+    }
   } catch (error) {
     logger.error(
       `Failed to complete cycle for ${config.address.city}: ${

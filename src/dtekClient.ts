@@ -20,7 +20,7 @@ export class DtekClient {
 
     if (!this.browser) {
       this.browser = await puppeteer.launch({
-        headless: false, // Set to false for debugging
+        headless: true, // Set to false for debugging
         args: ["--no-sandbox", "--disable-setuid-sandbox"],
         slowMo: 100, // Slow down operations for visibility
       });

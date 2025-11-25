@@ -1,0 +1,111 @@
+import TelegramBot from "node-telegram-bot-api";
+import { ProcessedSchedule } from "./types";
+import { logger } from "./logger";
+
+export class TelegramService {
+  private bot: TelegramBot | null = null;
+  private chatId: string;
+
+  constructor(botToken: string, chatId: string) {
+    if (!botToken || !chatId) {
+      throw new Error("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required");
+    }
+    this.chatId = chatId;
+    this.bot = new TelegramBot(botToken, { polling: false });
+    logger.info("TelegramService initialized");
+  }
+
+  /**
+   * Formats processed schedule into a readable Telegram message
+   */
+  private formatMessage(schedule: ProcessedSchedule): string {
+    const lines: string[] = [];
+
+    // Header
+    lines.push("🔌 <b>Графік відключень світла</b>\n");
+
+    // Address
+    const addr = schedule.address;
+    const addressParts: string[] = [];
+    if (addr.city) addressParts.push(addr.city);
+    if (addr.street) addressParts.push(addr.street);
+    if (addr.building) addressParts.push(`буд. ${addr.building}`);
+    if (addr.queue) addressParts.push(`(${addr.queue})`);
+
+    if (addressParts.length > 0) {
+      lines.push(`📍 <b>Адреса:</b> ${addressParts.join(", ")}\n`);
+    }
+
+    // Update date
+    if (schedule.updateDate) {
+      lines.push(`📅 <b>Оновлено:</b> ${schedule.updateDate}\n`);
+    }
+
+    // Periods
+    if (schedule.periods.length === 0) {
+      lines.push("\n✅ <b>Відключень не заплановано</b>");
+    } else {
+      lines.push(`\n⏰ <b>Періоди відключення (${schedule.periods.length}):</b>\n`);
+
+      schedule.periods.forEach((period, index) => {
+        lines.push(`${index + 1}. ${period.startTime} - ${period.endTime}`);
+      });
+    }
+
+    return lines.join("\n");
+  }
+
+  /**
+   * Sends processed schedule to Telegram channel
+   */
+  async sendSchedule(schedule: ProcessedSchedule): Promise<boolean> {
+    if (!this.bot) {
+      logger.error("Telegram bot is not initialized");
+      return false;
+    }
+
+    try {
+      const message = this.formatMessage(schedule);
+      
+      await this.bot.sendMessage(this.chatId, message, {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      });
+
+      logger.info(`Successfully sent schedule to Telegram chat ${this.chatId}`);
+      return true;
+    } catch (error) {
+      logger.error(
+        `Failed to send message to Telegram: ${(error as Error).message}`,
+        error
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Sends a simple text message
+   */
+  async sendMessage(text: string): Promise<boolean> {
+    if (!this.bot) {
+      logger.error("Telegram bot is not initialized");
+      return false;
+    }
+
+    try {
+      await this.bot.sendMessage(this.chatId, text, {
+        parse_mode: "HTML",
+      });
+
+      logger.info(`Successfully sent message to Telegram chat ${this.chatId}`);
+      return true;
+    } catch (error) {
+      logger.error(
+        `Failed to send message to Telegram: ${(error as Error).message}`,
+        error
+      );
+      return false;
+    }
+  }
+}
+

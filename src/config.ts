@@ -36,7 +36,14 @@ export interface AppConfig {
   timezone: string;
   requestTimeoutMs: number;
   userAgent: string;
+  telegram?: {
+    botToken: string;
+    chatId: string;
+  };
 }
+
+const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+const telegramChatId = process.env.TELEGRAM_CHAT_ID?.trim();
 
 export const config: AppConfig = {
   baseUrl:
@@ -52,5 +59,13 @@ export const config: AppConfig = {
   userAgent:
     process.env.USER_AGENT?.trim() ??
     "Mozilla/5.0 (compatible; DtekScraper/1.0; +https://github.com/)",
+  ...(telegramBotToken && telegramChatId
+    ? {
+        telegram: {
+          botToken: telegramBotToken,
+          chatId: telegramChatId,
+        },
+      }
+    : {}),
 };
 

@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "test:reader": "ts-node src/test-reader.ts"
+    "test:reader": "ts-node src/test-reader.ts",
+    "test:telegram": "ts-node src/test-telegram.ts"
   },
   "keywords": [],
   "author": "",
@@ -17,11 +18,13 @@
     "dotenv": "^17.2.3",
     "fs-extra": "^11.3.2",
     "node-cron": "^4.2.1",
+    "node-telegram-bot-api": "^0.66.0",
     "puppeteer": "^24.31.0"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^24.10.1",
+    "@types/node-telegram-bot-api": "^0.64.13",
     "@types/puppeteer": "^7.0.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

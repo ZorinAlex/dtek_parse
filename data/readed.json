@@ -1,0 +1,21 @@
+{
+  "address": {
+    "city": "Ржищів",
+    "street": "Петренка",
+    "building": "1",
+    "queue": "Черга 3.2"
+  },
+  "periods": [
+    {
+      "startTime": "06:00",
+      "endTime": "09:30",
+      "date": "26.11.25"
+    },
+    {
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "date": "26.11.25"
+    }
+  ],
+  "updateDate": "26.11.2025 01:45"
+}

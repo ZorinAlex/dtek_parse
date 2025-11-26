@@ -138,9 +138,9 @@ async function saveProcessedToReaded(processed: ProcessedSchedule): Promise<void
  */
 function areSchedulesEqual(a: ProcessedSchedule, b: ProcessedSchedule): boolean {
   // Compare updateDate
-  if (a.updateDate !== b.updateDate) {
-    return false;
-  }
+  // if (a.updateDate !== b.updateDate) {
+  //   return false;
+  // }
 
   // Compare address
   if (

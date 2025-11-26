@@ -7,11 +7,6 @@
   },
   "outages": [
     {
-      "className": "cell-second-half",
-      "timeSlot": "05-06",
-      "date": "26.11.25"
-    },
-    {
       "className": "cell-scheduled",
       "timeSlot": "06-07",
       "date": "26.11.25"
@@ -52,5 +47,5 @@
       "date": "26.11.25"
     }
   ],
-  "updateDate": "25.11.2025 19:45"
+  "updateDate": "26.11.2025 01:45"
 }

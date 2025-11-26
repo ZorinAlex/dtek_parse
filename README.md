@@ -3,8 +3,14 @@
 Fetch, normalize, and persist power outage schedules from [dtek-krem.com.ua](https://www.dtek-krem.com.ua/ua/shutdowns) every 15 minutes.
 
 ### Prerequisites
-- Node.js 16+
+
+**For local development:**
+- Node.js 20+
 - npm 8+
+
+**For Docker deployment:**
+- Docker 20+
+- Docker Compose 2.0+ (optional)
 
 ### Setup
 1. Install dependencies:
@@ -120,13 +126,77 @@ The processed schedule format (after merging consecutive periods):
   "periods": [
     {
       "startTime": "05:30",
-      "endTime": "09:30"
+      "endTime": "09:30",
+      "date": "26.11.25"
     },
     {
       "startTime": "16:00",
-      "endTime": "20:00"
+      "endTime": "20:00",
+      "date": "26.11.25"
     }
   ]
 }
 ```
+
+### Docker Deployment
+
+#### Using Docker Compose (Recommended)
+
+1. **Create `.env` file:**
+   ```bash
+   cp env.example .env
+   # Edit .env with your configuration
+   ```
+
+2. **Build and start:**
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **View logs:**
+   ```bash
+   docker-compose logs -f
+   ```
+
+4. **Stop:**
+   ```bash
+   docker-compose down
+   ```
+
+#### Using Docker directly
+
+1. **Build the image:**
+   ```bash
+   docker build -t dtek-scraper .
+   ```
+
+2. **Run the container:**
+   ```bash
+   docker run -d \
+     --name dtek-scraper \
+     --restart unless-stopped \
+     -e ADDRESS_CITY="Кременчук" \
+     -e ADDRESS_STREET="вул. Соборна" \
+     -e ADDRESS_BUILDING="10" \
+     -e TELEGRAM_BOT_TOKEN="your_token" \
+     -e TELEGRAM_CHAT_ID="@your_channel" \
+     -v $(pwd)/data:/app/data \
+     dtek-scraper
+   ```
+
+3. **View logs:**
+   ```bash
+   docker logs -f dtek-scraper
+   ```
+
+#### Data Persistence
+
+The `data` directory is mounted as a volume, so `schedules.json` and `readed.json` will persist on your host machine at `./data/`.
+
+#### Environment Variables
+
+All environment variables from `.env` can be passed to Docker via:
+- `docker-compose.yml` (automatically loads from `.env`)
+- `-e` flags in `docker run`
+- Environment file: `docker run --env-file .env ...`
 

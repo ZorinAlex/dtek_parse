@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  dtek-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dtek-scraper
+    restart: unless-stopped
+    environment:
+      - ADDRESS_CITY=${ADDRESS_CITY}
+      - ADDRESS_STREET=${ADDRESS_STREET}
+      - ADDRESS_BUILDING=${ADDRESS_BUILDING}
+      - CRON_PATTERN=${CRON_PATTERN:-*/15 * * * *}
+      - STORAGE_PATH=/app/data/schedules.json
+      - REQUEST_TIMEOUT_MS=${REQUEST_TIMEOUT_MS:-20000}
+      - USER_AGENT=${USER_AGENT:-Mozilla/5.0 (compatible; DtekScraper/1.0)}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - TZ=${TZ:-Europe/Kyiv}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - dtek-network
+
+networks:
+  dtek-network:
+    driver: bridge
+

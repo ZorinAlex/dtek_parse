@@ -1,8 +1,29 @@
-# Use Node.js LTS version
+########################
+## 1. Build stage
+########################
+
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+COPY tsconfig.json ./
+
+RUN npm ci
+
+COPY src ./src
+RUN npm run build
+RUN npm cache clean --force && rm -rf /root/.npm
+
+
+########################
+## 2. Runtime stage
+########################
+
 FROM node:20-slim
 
-# Install dependencies for Puppeteer
-RUN apt-get update && apt-get install -y \
+# Ліби для Chromium / Puppeteer
+RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     chromium-sandbox \
     fonts-liberation \
@@ -40,39 +61,25 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     wget \
     xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
-COPY tsconfig.json ./
+RUN npm ci --omit=dev \
+  && npm cache clean --force \
+  && rm -rf /root/.npm
 
-# Install dependencies
-RUN npm ci --only=production=false
+COPY --from=builder /app/dist ./dist
 
-# Copy source code
-COPY src ./src
-
-# Build TypeScript
-RUN npm run build
-
-# Remove dev dependencies and source files
-RUN npm ci --only=production && \
-    rm -rf src tsconfig.json node_modules/@types
-
-# Create data directory
 RUN mkdir -p /app/data
 
-# Set Puppeteer to use system Chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Set timezone
 ENV TZ=Europe/Kyiv
 
-# Run as non-root user (check if user exists first)
 RUN if ! id -u 1000 > /dev/null 2>&1; then \
       useradd -m -u 1000 appuser; \
     else \
@@ -81,9 +88,6 @@ RUN if ! id -u 1000 > /dev/null 2>&1; then \
     chown -R appuser:appuser /app
 USER appuser
 
-# Expose data directory as volume
 VOLUME ["/app/data"]
 
-# Start the application
 CMD ["node", "dist/index.js"]
-

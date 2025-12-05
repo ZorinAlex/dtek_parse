@@ -36,6 +36,8 @@ export interface AppConfig {
   timezone: string;
   requestTimeoutMs: number;
   userAgent: string;
+  maxRetries: number;
+  retryDelayMs: number;
   telegram?: {
     botToken: string;
     chatId: string;
@@ -56,6 +58,8 @@ export const config: AppConfig = {
   ),
   timezone: process.env.TZ?.trim() ?? "Europe/Kyiv",
   requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS ?? 20000),
+  maxRetries: Number(process.env.MAX_RETRIES ?? 3),
+  retryDelayMs: Number(process.env.RETRY_DELAY_MS ?? 2000),
   userAgent:
     process.env.USER_AGENT?.trim() ??
     "Mozilla/5.0 (compatible; DtekScraper/1.0; +https://github.com/)",

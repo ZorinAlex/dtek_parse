@@ -11,6 +11,47 @@ const TABLE_SELECTOR = "#tableRenderElem table";
 export class DtekClient {
   private browser: Browser | null = null;
 
+  private async getBrowser(): Promise<Browser> {
+    if (this.browser && this.browser.isConnected()) {
+      return this.browser;
+    }
+
+    if (this.browser) {
+      try {
+        await this.browser.close();
+      } catch (_) {
+      }
+      this.browser = null;
+    }
+
+    logger.info("Launching new Puppeteer browser instance");
+
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+        "--disable-extensions",
+      ],
+      //slowMo: 100,
+    });
+
+    browser.on("disconnected", () => {
+      logger.warn("Puppeteer browser disconnected, resetting instance");
+      this.browser = null;
+    });
+
+    browser.on("targetdestroyed", () => {
+      logger.debug("Browser target destroyed");
+    });
+
+    this.browser = browser;
+    return browser;
+  }
+
   async fetchRawSchedule(
     address: AddressQuery
   ): Promise<string | Record<string, unknown>> {
@@ -18,164 +59,222 @@ export class DtekClient {
       `Opening browser to fetch schedule for ${address.city}${address.street ? `, ${address.street}` : ""}${address.building ? `, ${address.building}` : ""}`
     );
 
-    if (!this.browser) {
-      this.browser = await puppeteer.launch({
-        headless: true, // Set to false for debugging
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-        slowMo: 100, // Slow down operations for visibility
-      });
-    }
+    let lastError: Error | null = null;
+    const maxRetries = config.maxRetries;
 
-    const page = await this.browser.newPage();
-    await page.setUserAgent(config.userAgent);
-    await page.setViewport({ width: 900, height: 900 });
-
-    try {
-      logger.debug(`Navigating to ${config.baseUrl}`);
-      await page.goto(config.baseUrl, {
-        waitUntil: "networkidle2",
-        timeout: config.requestTimeoutMs,
-      });
-
-      await page.waitForSelector("body", { timeout: 5000 });
-
-      // Wait for JavaScript to load and execute
-      logger.debug("Waiting for JavaScript to load...");
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        await page.waitForFunction(
-          () => {
-            // Check if jQuery is loaded (site uses jQuery)
-            return typeof (window as any).jQuery !== "undefined" || 
-                   typeof (window as any).$ !== "undefined" ||
-                   document.readyState === "complete";
-          },
-          { timeout: 5000 }
-        );
-        logger.debug("jQuery/scripts loaded");
-      } catch (error) {
-        logger.warn("jQuery not detected, but continuing...");
-      }
+        if (attempt > 1) {
+          logger.info(`Retry attempt ${attempt}/${maxRetries} after connection error`);
+          await new Promise((resolve) => setTimeout(resolve, config.retryDelayMs));
+        }
 
-      // Wait for popup modal to appear and close it
-      logger.debug("Waiting for popup modal...");
-      try {
-        // Wait up to 10 seconds for the modal to appear
-        await page.waitForSelector(
-          "button.modal_close.m-attention_close, [data-micromodal-close], .modal_close",
-          { timeout: 5000, visible: true }
-        );
+        // Ensure browser is connected
+        const browser = await this.getBrowser();
         
-        logger.debug("Popup modal detected, waiting 1 seconds before closing...");
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        
-        // Try to close the modal
-        const closed = await page.evaluate(() => {
-          // Try multiple selectors for the close button
-          const selectors = [
-            "button.modal_close.m-attention_close",
-            "[data-micromodal-close]",
-            ".modal_close",
-            "button[aria-label*='Close']",
-          ];
-          
-          for (const sel of selectors) {
-            const button = document.querySelector(sel) as HTMLElement | null;
-            if (button && button.offsetParent !== null) {
-              // Button is visible
-              button.click();
-              return true;
-            }
+        // Verify browser is still connected before creating page
+        if (!browser.isConnected()) {
+          logger.warn("Browser disconnected, recreating...");
+          await this.close();
+          continue;
+        }
+
+        const page = await browser.newPage();
+        await page.setUserAgent(config.userAgent);
+        await page.setViewport({ width: 900, height: 900 });
+
+        try {
+          logger.debug(`Navigating to ${config.baseUrl}`);
+          await page.goto(config.baseUrl, {
+            waitUntil: "networkidle2",
+            timeout: config.requestTimeoutMs,
+          });
+
+          await page.waitForSelector("body", { timeout: 5000 });
+
+          // Wait for JavaScript to load and execute
+          logger.debug("Waiting for JavaScript to load...");
+          try {
+            await page.waitForFunction(
+              () => {
+                // Check if jQuery is loaded (site uses jQuery)
+                return typeof (window as any).jQuery !== "undefined" || 
+                       typeof (window as any).$ !== "undefined" ||
+                       document.readyState === "complete";
+              },
+              { timeout: 5000 }
+            );
+            logger.debug("jQuery/scripts loaded");
+          } catch (error) {
+            logger.warn("jQuery not detected, but continuing...");
           }
-          return false;
-        });
-        
-        if (closed) {
-          logger.debug("Popup modal closed successfully");
-        } else {
-          logger.warn("Could not find or click close button, but continuing...");
-        }
-        
-        // Wait a bit for modal to disappear
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      } catch (error) {
-        logger.debug(`No popup modal appeared or already closed: ${(error as Error).message}`);
-      }
 
-      // Wait for form to be ready
-      await page.waitForSelector("#discon_form", { timeout: 5000 });
-      
-      // Wait a bit more for autocomplete initialization
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      // Try to trigger autocomplete initialization manually
-      await page.evaluate(() => {
-        // Try to find and trigger autocomplete init if it exists
-        const cityInput = document.querySelector("#city") as HTMLInputElement | null;
-        if (cityInput) {
-          // Trigger focus to initialize autocomplete
-          cityInput.focus();
-          cityInput.blur();
-        }
-      });
-
-      await this.ensureInputReady(page, CITY_SELECTOR);
-      if (address.city) {
-        await this.fillAutocompleteInput(page, CITY_SELECTOR, address.city);
-        // Wait for city selection to process and enable street field
-        logger.debug("Waiting for street field to become enabled after city selection...");
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      } else {
-        throw new Error("ADDRESS_CITY is required for the search form");
-      }
-
-      if (address.street) {
-        await this.waitForFieldEnabled(page, STREET_SELECTOR);
-        
-        // Double-check that field is actually enabled and can receive input
-        const isEnabled = await page.evaluate((sel) => {
-          const el = document.querySelector(sel) as HTMLInputElement | null;
-          return !!el && !el.disabled && !el.hasAttribute("disabled");
-        }, STREET_SELECTOR);
-        
-        if (!isEnabled) {
-          logger.warn("Street field is still disabled, trying to enable it manually...");
-          await page.evaluate((sel) => {
-            const el = document.querySelector(sel) as HTMLInputElement | null;
-            if (el) {
-              el.removeAttribute("disabled");
-              el.disabled = false;
-              el.readOnly = false;
+          // Wait for popup modal to appear and close it
+          logger.debug("Waiting for popup modal...");
+          try {
+            // Wait up to 10 seconds for the modal to appear
+            await page.waitForSelector(
+              "button.modal_close.m-attention_close, [data-micromodal-close], .modal_close",
+              { timeout: 5000, visible: true }
+            );
+            
+            logger.debug("Popup modal detected, waiting 1 seconds before closing...");
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            
+            // Try to close the modal
+            const closed = await page.evaluate(() => {
+              // Try multiple selectors for the close button
+              const selectors = [
+                "button.modal_close.m-attention_close",
+                "[data-micromodal-close]",
+                ".modal_close",
+                "button[aria-label*='Close']",
+              ];
+              
+              for (const sel of selectors) {
+                const button = document.querySelector(sel) as HTMLElement | null;
+                if (button && button.offsetParent !== null) {
+                  // Button is visible
+                  button.click();
+                  return true;
+                }
+              }
+              return false;
+            });
+            
+            if (closed) {
+              logger.debug("Popup modal closed successfully");
+            } else {
+              logger.warn("Could not find or click close button, but continuing...");
             }
-          }, STREET_SELECTOR);
-          await new Promise((resolve) => setTimeout(resolve, 300));
+            
+            // Wait a bit for modal to disappear
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } catch (error) {
+            logger.debug(`No popup modal appeared or already closed: ${(error as Error).message}`);
+          }
+
+          // Wait for form to be ready
+          await page.waitForSelector("#discon_form", { timeout: 5000 });
+          
+          // Wait a bit more for autocomplete initialization
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          
+          // Try to trigger autocomplete initialization manually
+          await page.evaluate(() => {
+            // Try to find and trigger autocomplete init if it exists
+            const cityInput = document.querySelector("#city") as HTMLInputElement | null;
+            if (cityInput) {
+              // Trigger focus to initialize autocomplete
+              cityInput.focus();
+              cityInput.blur();
+            }
+          });
+
+          await this.ensureInputReady(page, CITY_SELECTOR);
+          if (address.city) {
+            await this.fillAutocompleteInput(page, CITY_SELECTOR, address.city);
+            // Wait for city selection to process and enable street field
+            logger.debug("Waiting for street field to become enabled after city selection...");
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } else {
+            throw new Error("ADDRESS_CITY is required for the search form");
+          }
+
+          if (address.street) {
+            await this.waitForFieldEnabled(page, STREET_SELECTOR);
+            
+            // Double-check that field is actually enabled and can receive input
+            const isEnabled = await page.evaluate((sel) => {
+              const el = document.querySelector(sel) as HTMLInputElement | null;
+              return !!el && !el.disabled && !el.hasAttribute("disabled");
+            }, STREET_SELECTOR);
+            
+            if (!isEnabled) {
+              logger.warn("Street field is still disabled, trying to enable it manually...");
+              await page.evaluate((sel) => {
+                const el = document.querySelector(sel) as HTMLInputElement | null;
+                if (el) {
+                  el.removeAttribute("disabled");
+                  el.disabled = false;
+                  el.readOnly = false;
+                }
+              }, STREET_SELECTOR);
+              await new Promise((resolve) => setTimeout(resolve, 300));
+            }
+            
+            logger.debug("Filling street field...");
+            await this.fillAutocompleteInput(page, STREET_SELECTOR, address.street);
+          } else {
+            logger.warn("ADDRESS_STREET is not provided; schedule may be incomplete");
+          }
+
+          if (address.building) {
+            await this.waitForFieldEnabled(page, HOUSE_SELECTOR);
+            await this.fillAutocompleteInput(
+              page,
+              HOUSE_SELECTOR,
+              address.building
+            );
+          } else {
+            logger.warn("ADDRESS_BUILDING is not provided; schedule may be inaccurate");
+          }
+
+          await this.waitForScheduleUpdate(page);
+
+          const html = await page.content();
+          logger.info(`Fetched HTML (${html.length} chars) with Puppeteer`);
+
+          return html;
+        } finally {
+          // Always close the page, even on error
+          try {
+            if (!page.isClosed()) {
+              await page.close();
+            }
+          } catch (closeError) {
+            logger.debug(`Error closing page: ${(closeError as Error).message}`);
+          }
         }
+      } catch (error) {
+        const err = error as Error;
+        lastError = err;
         
-        logger.debug("Filling street field...");
-        await this.fillAutocompleteInput(page, STREET_SELECTOR, address.street);
-      } else {
-        logger.warn("ADDRESS_STREET is not provided; schedule may be incomplete");
+        // Check if it's a connection error
+        const isConnectionError = 
+          err.message.includes("Connection closed") ||
+          err.message.includes("ConnectionClosedError") ||
+          err.message.includes("Target closed") ||
+          err.message.includes("Session closed") ||
+          err.message.includes("Protocol error") ||
+          err.name === "ConnectionClosedError";
+
+        if (isConnectionError) {
+          logger.warn(`Connection error on attempt ${attempt}/${maxRetries}: ${err.message}`);
+          
+          // Close browser to force recreation on next attempt
+          try {
+            await this.close();
+          } catch (closeError) {
+            logger.debug(`Error closing browser: ${(closeError as Error).message}`);
+          }
+          
+          // If this was the last attempt, throw the error
+          if (attempt === maxRetries) {
+            throw new Error(`Failed after ${maxRetries} attempts: ${err.message}`);
+          }
+          
+          // Continue to retry
+          continue;
+        } else {
+          // For non-connection errors, throw immediately
+          throw err;
+        }
       }
-
-      if (address.building) {
-        await this.waitForFieldEnabled(page, HOUSE_SELECTOR);
-        await this.fillAutocompleteInput(
-          page,
-          HOUSE_SELECTOR,
-          address.building
-        );
-      } else {
-        logger.warn("ADDRESS_BUILDING is not provided; schedule may be inaccurate");
-      }
-
-      await this.waitForScheduleUpdate(page);
-
-      const html = await page.content();
-      logger.info(`Fetched HTML (${html.length} chars) with Puppeteer`);
-
-      return html;
-    } finally {
-      await page.close();
     }
+
+    // Should never reach here, but TypeScript needs it
+    throw lastError || new Error("Failed to fetch schedule after all retries");
   }
 
   async close(): Promise<void> {

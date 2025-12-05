@@ -39,6 +39,8 @@ Environment variables:
 | `CRON_PATTERN` | Cron spec for refresh | `*/15 * * * *` |
 | `STORAGE_PATH` | JSON output path | `data/schedules.json` |
 | `REQUEST_TIMEOUT_MS` | HTTP timeout | `20000` |
+| `MAX_RETRIES` | Max retry attempts on connection errors | `3` |
+| `RETRY_DELAY_MS` | Delay between retries (ms) | `2000` |
 | `USER_AGENT` | Custom UA header | internal default |
 | `LOG_LEVEL` | `error|warn|info|debug` | `info` |
 | `TZ` | Cron timezone | `Europe/Kyiv` |

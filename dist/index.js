@@ -64,17 +64,19 @@ async function fetchParseSave() {
         if (isDifferent) {
             logger_1.logger.info("Schedule data has changed, sending to Telegram");
             // Send to Telegram if configured
-            if (telegramService) {
-                try {
-                    await telegramService.sendSchedule(processed);
-                }
-                catch (error) {
-                    logger_1.logger.error(`Failed to send schedule to Telegram: ${error.message}`, error);
-                }
-            }
-            else {
-                logger_1.logger.warn("Telegram service not configured, skipping notification");
-            }
+            // if (telegramService) {
+            //   try {
+            //     await telegramService.sendSchedule(processed);
+            //   } catch (error) {
+            //     logger.error(
+            //       `Failed to send schedule to Telegram: ${(error as Error).message}`,
+            //       error
+            //     );
+            //   }
+            // } else {
+            //   logger.warn("Telegram service not configured, skipping notification");
+            // }
+            console.log(processed);
             // Save as last sent data
             await saveProcessedToReaded(processed);
             logger_1.logger.info("Saved processed schedule to readed.json");
@@ -115,9 +117,9 @@ async function saveProcessedToReaded(processed) {
  */
 function areSchedulesEqual(a, b) {
     // Compare updateDate
-    if (a.updateDate !== b.updateDate) {
-        return false;
-    }
+    // if (a.updateDate !== b.updateDate) {
+    //   return false;
+    // }
     // Compare address
     if (a.address.city !== b.address.city ||
         a.address.street !== b.address.street ||

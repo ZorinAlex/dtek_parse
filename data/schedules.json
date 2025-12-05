@@ -8,44 +8,39 @@
   "outages": [
     {
       "className": "cell-scheduled",
-      "timeSlot": "06-07",
-      "date": "26.11.25"
+      "timeSlot": "11-12",
+      "date": "05.12.25"
     },
     {
       "className": "cell-scheduled",
-      "timeSlot": "07-08",
-      "date": "26.11.25"
+      "timeSlot": "12-13",
+      "date": "05.12.25"
     },
     {
       "className": "cell-scheduled",
-      "timeSlot": "08-09",
-      "date": "26.11.25"
+      "timeSlot": "13-14",
+      "date": "05.12.25"
     },
     {
       "className": "cell-first-half",
-      "timeSlot": "09-10",
-      "date": "26.11.25"
+      "timeSlot": "14-15",
+      "date": "05.12.25"
+    },
+    {
+      "className": "cell-second-half",
+      "timeSlot": "21-22",
+      "date": "05.12.25"
     },
     {
       "className": "cell-scheduled",
-      "timeSlot": "16-17",
-      "date": "26.11.25"
+      "timeSlot": "22-23",
+      "date": "05.12.25"
     },
     {
       "className": "cell-scheduled",
-      "timeSlot": "17-18",
-      "date": "26.11.25"
-    },
-    {
-      "className": "cell-scheduled",
-      "timeSlot": "18-19",
-      "date": "26.11.25"
-    },
-    {
-      "className": "cell-scheduled",
-      "timeSlot": "19-20",
-      "date": "26.11.25"
+      "timeSlot": "23-24",
+      "date": "05.12.25"
     }
   ],
-  "updateDate": "26.11.2025 01:45"
+  "updateDate": "04.12.2025 18:57"
 }

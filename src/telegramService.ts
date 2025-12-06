@@ -26,14 +26,14 @@ export class TelegramService {
 
     // Address
     const addr = schedule.address;
-    const addressParts: string[] = [];
-    if (addr.city) addressParts.push(addr.city);
-    if (addr.street) addressParts.push(addr.street);
-    if (addr.building) addressParts.push(`буд. ${addr.building}`);
-    if (addr.queue) addressParts.push(`(${addr.queue})`);
+    //const addressParts: string[] = [];
+    // if (addr.city) addressParts.push(addr.city);
+    // if (addr.street) addressParts.push(addr.street);
+    // if (addr.building) addressParts.push(`буд. ${addr.building}`);
+    //if (addr.queue) addressParts.push(`${addr.queue}`);
 
-    if (addressParts.length > 0) {
-      lines.push(`📍 <b>Адреса:</b> ${addressParts.join(", ")}\n`);
+    if (addr.queue) {
+      lines.push(`📍 ${addr.queue}\n`);
     }
 
 

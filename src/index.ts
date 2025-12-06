@@ -38,13 +38,28 @@ async function fetchParseSave(): Promise<void> {
     const rawPayload = await client.fetchRawSchedule(config.address);
     const parsed = parser.parse(rawPayload, config.address);
 
+    // Validate parsed data
+    const outages = parsed.outages;
+    if (!outages || !Array.isArray(outages)) {
+      logger.error("Parsed outages is not an array or is undefined");
+      logger.debug(`Parsed result: ${JSON.stringify({ 
+        hasUpdateDate: !!parsed.updateDate,
+        hasQueue: !!parsed.queue
+      })}`);
+      throw new Error("Failed to parse outages from HTML - no valid data found");
+    }
+
+    if (outages.length === 0) {
+      logger.warn("No outages found in parsed data - this might be normal if there are no scheduled outages");
+    }
+
     const dataToSave: PersistedSchedules = {
       address: {
         city: config.address.city,
         street: config.address.street || "",
         building: config.address.building || "",
       },
-      outages: parsed.outages,
+      outages: outages,
     };
     
     if (parsed.updateDate) {
@@ -57,7 +72,7 @@ async function fetchParseSave(): Promise<void> {
     
     await storage.save(dataToSave);
 
-    logger.info(`Cycle complete: ${parsed.outages.length} outages stored`);
+    logger.info(`Cycle complete: ${outages.length} outages stored`);
 
     // Process and compare with last sent data
     await dataReader.load();

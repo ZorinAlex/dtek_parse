@@ -12,16 +12,26 @@ export class DtekClient {
   private browser: Browser | null = null;
 
   private async getBrowser(): Promise<Browser> {
-    if (this.browser && this.browser.isConnected()) {
-      return this.browser;
-    }
-
+    // Check if browser exists and is connected
     if (this.browser) {
       try {
-        await this.browser.close();
-      } catch (_) {
+        if (this.browser.isConnected()) {
+          // Verify browser is actually working by checking pages
+          const pages = await this.browser.pages();
+          return this.browser;
+        } else {
+          logger.debug("Browser exists but is not connected, closing...");
+          try {
+            await this.browser.close();
+          } catch (_) {
+            // Ignore errors when closing disconnected browser
+          }
+          this.browser = null;
+        }
+      } catch (error) {
+        logger.warn(`Error checking browser connection: ${(error as Error).message}`);
+        this.browser = null;
       }
-      this.browser = null;
     }
 
     logger.info("Launching new Puppeteer browser instance");
@@ -35,6 +45,9 @@ export class DtekClient {
         "--disable-gpu",
         "--disable-software-rasterizer",
         "--disable-extensions",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
       ],
       //slowMo: 100,
     });
@@ -47,6 +60,9 @@ export class DtekClient {
     browser.on("targetdestroyed", () => {
       logger.debug("Browser target destroyed");
     });
+
+    // Small delay to ensure browser is fully initialized
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     this.browser = browser;
     return browser;
@@ -79,18 +95,65 @@ export class DtekClient {
           continue;
         }
 
-        const page = await browser.newPage();
+        // Verify browser is still connected after getting it
+        if (!browser.isConnected()) {
+          logger.warn("Browser disconnected after getBrowser(), recreating...");
+          await this.close();
+          continue;
+        }
+
+        let page: Page;
+        try {
+          page = await browser.newPage();
+        } catch (error) {
+          const err = error as Error;
+          logger.warn(`Failed to create new page: ${err.message}`);
+          if (err.message.includes("Target closed") || err.message.includes("Connection")) {
+            await this.close();
+            continue;
+          }
+          throw err;
+        }
+
+        // Verify page is not closed
+        if (page.isClosed()) {
+          logger.warn("Page was closed immediately after creation, retrying...");
+          await this.close();
+          continue;
+        }
+
         await page.setUserAgent(config.userAgent);
         await page.setViewport({ width: 900, height: 900 });
 
+        // Small delay to ensure page is ready
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
         try {
+          // Verify browser and page are still valid before navigation
+          if (!browser.isConnected()) {
+            throw new Error("Browser disconnected before navigation");
+          }
+          if (page.isClosed()) {
+            throw new Error("Page closed before navigation");
+          }
+
           logger.debug(`Navigating to ${config.baseUrl}`);
           await page.goto(config.baseUrl, {
             waitUntil: "networkidle2",
             timeout: config.requestTimeoutMs,
           });
 
+          // Verify page is still open after navigation
+          if (page.isClosed()) {
+            throw new Error("Page was closed during navigation");
+          }
+
           await page.waitForSelector("body", { timeout: 5000 });
+
+          // Verify page is still open
+          if (page.isClosed()) {
+            throw new Error("Page was closed after waiting for body");
+          }
 
           // Wait for JavaScript to load and execute
           logger.debug("Waiting for JavaScript to load...");
@@ -107,6 +170,11 @@ export class DtekClient {
             logger.debug("jQuery/scripts loaded");
           } catch (error) {
             logger.warn("jQuery not detected, but continuing...");
+          }
+
+          // Verify page is still open
+          if (page.isClosed()) {
+            throw new Error("Page was closed after waiting for JavaScript");
           }
 
           // Wait for popup modal to appear and close it
@@ -154,8 +222,18 @@ export class DtekClient {
             logger.debug(`No popup modal appeared or already closed: ${(error as Error).message}`);
           }
 
+          // Verify page is still open before form operations
+          if (page.isClosed()) {
+            throw new Error("Page was closed before form operations");
+          }
+
           // Wait for form to be ready
           await page.waitForSelector("#discon_form", { timeout: 5000 });
+          
+          // Verify page is still open
+          if (page.isClosed()) {
+            throw new Error("Page was closed after waiting for form");
+          }
           
           // Wait a bit more for autocomplete initialization
           await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -222,15 +300,29 @@ export class DtekClient {
 
           await this.waitForScheduleUpdate(page);
 
+          // Verify HTML contains the expected elements before returning
           const html = await page.content();
+          const hasDisconFact = html.includes('id="discon-fact"');
+          const hasFactTable = html.includes('discon-fact-table');
+          
+          if (!hasDisconFact) {
+            logger.warn("Warning: HTML does not contain #discon-fact element");
+          }
+          if (!hasFactTable) {
+            logger.warn("Warning: HTML does not contain .discon-fact-table elements");
+          }
+          
           logger.info(`Fetched HTML (${html.length} chars) with Puppeteer`);
+          logger.debug(`HTML contains #discon-fact: ${hasDisconFact}, contains .discon-fact-table: ${hasFactTable}`);
 
           return html;
         } finally {
           // Always close the page, even on error
           try {
-            if (!page.isClosed()) {
-              await page.close();
+            if (page && !page.isClosed()) {
+              await page.close().catch(() => {
+                // Ignore errors when closing page
+              });
             }
           } catch (closeError) {
             logger.debug(`Error closing page: ${(closeError as Error).message}`);
@@ -247,6 +339,9 @@ export class DtekClient {
           err.message.includes("Target closed") ||
           err.message.includes("Session closed") ||
           err.message.includes("Protocol error") ||
+          err.message.includes("Navigating frame was detached") ||
+          err.message.includes("Frame was detached") ||
+          err.message.includes("LifecycleWatcher disposed") ||
           err.name === "ConnectionClosedError";
 
         if (isConnectionError) {
@@ -541,36 +636,70 @@ export class DtekClient {
     logger.debug("Waiting for schedule table to update...");
     
     try {
-      // Wait for table to be present
-      await page.waitForSelector(TABLE_SELECTOR, { timeout: 1000 });
+      // Wait for #discon-fact element to appear (this is what the parser looks for)
+      await page.waitForSelector("#discon-fact", { 
+        timeout: config.requestTimeoutMs,
+        visible: true 
+      });
       
-      // Wait a bit for any dynamic content to load
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      logger.debug("#discon-fact element found");
       
-      // Check if table has content (either with scheduled cells or just has rows)
+      // Wait for at least one .discon-fact-table to be present
       await page.waitForFunction(
-        (selector) => {
-          const table = document.querySelector(selector);
-          if (!table) {
+        () => {
+          const disconFact = document.querySelector("#discon-fact");
+          if (!disconFact) {
             return false;
           }
-
-          const rows = table.querySelectorAll("tbody tr");
-          if (rows.length === 0) {
-            return false;
-          }
-
-          // Table exists and has rows - that's enough
-          // We don't require scheduled cells because some addresses might have no outages
-          return true;
+          
+          const factTables = disconFact.querySelectorAll(".discon-fact-table");
+          return factTables.length > 0;
         },
-        { timeout: config.requestTimeoutMs },
-        TABLE_SELECTOR
+        { timeout: config.requestTimeoutMs }
       );
       
-      logger.debug("Schedule table updated");
+      logger.debug(".discon-fact-table found");
+      
+      // Wait a bit more for any dynamic content to fully load
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      
+      // Verify that #discon-fact actually contains data
+      const hasData = await page.evaluate(() => {
+        const disconFact = document.querySelector("#discon-fact");
+        if (!disconFact) {
+          return false;
+        }
+        
+        // Check if there are tables with content
+        const factTables = disconFact.querySelectorAll(".discon-fact-table");
+        if (factTables.length === 0) {
+          return false;
+        }
+        
+        // Check if at least one table has a tbody with rows
+        for (let i = 0; i < factTables.length; i++) {
+          const table = factTables[i]?.querySelector("table");
+          if (table) {
+            const rows = table.querySelectorAll("tbody tr");
+            if (rows.length > 0) {
+              return true;
+            }
+          }
+        }
+        
+        return false;
+      });
+      
+      if (!hasData) {
+        logger.warn("Warning: #discon-fact found but no table data detected");
+      } else {
+        logger.debug("Schedule table data verified");
+      }
+      
+      logger.debug("Schedule table updated and verified");
     } catch (error) {
-      logger.warn(`Table update timeout, but continuing: ${(error as Error).message}`);
+      logger.error(`Failed to wait for schedule update: ${(error as Error).message}`);
+      throw new Error(`Schedule table did not load: ${(error as Error).message}`);
     }
   }
 }

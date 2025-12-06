@@ -69,7 +69,8 @@ export class ScheduleParser {
     // Only parse tables from #discon-fact element
     const disconFact = $("#discon-fact");
     if (disconFact.length === 0) {
-      logger.debug("No #discon-fact element found");
+      logger.warn("No #discon-fact element found in HTML");
+      logger.debug(`HTML length: ${html.length}, contains 'discon-fact': ${html.includes('discon-fact')}`);
       return outages;
     }
 
@@ -77,11 +78,12 @@ export class ScheduleParser {
     const factTables = disconFact.find(".discon-fact-table");
     
     if (factTables.length === 0) {
-      logger.debug("No .discon-fact-table found in #discon-fact");
+      logger.warn("No .discon-fact-table found in #discon-fact");
+      logger.debug(`#discon-fact HTML snippet: ${disconFact.html()?.substring(0, 200)}...`);
       return outages;
     }
 
-    logger.debug(`Found ${factTables.length} fact table(s) in #discon-fact`);
+    logger.info(`Found ${factTables.length} fact table(s) in #discon-fact`);
     
     factTables.each((_, factTable) => {
       const $factTable = $(factTable);
